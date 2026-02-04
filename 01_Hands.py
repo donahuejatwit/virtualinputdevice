@@ -4,6 +4,7 @@ import time
 
 import cv2
 import mediapipe as mp
+from pynput.mouse import Controller, Button
 
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -25,7 +26,8 @@ ACTIVE=False
 def run(model: str, num_hands: int,
         min_hand_detection_confidence: float,
         min_hand_presence_confidence: float, min_tracking_confidence: float,
-        camera_id: int, width: int, height: int) -> None:
+        camera_id: int, width: int, height: int,
+        smoothing_alpha: float = .25, click_debounce: int = 1, clicked_display_frames: int = 15) -> None:
   """Continuously run inference on images acquired from the camera.
 
   Args:
@@ -40,6 +42,9 @@ def run(model: str, num_hands: int,
       camera_id: The camera id to be passed to OpenCV.
       width: The width of the frame captured from the camera.
       height: The height of the frame captured from the camera.
+      smoothing_alpha: EMA alpha (0..1) for cursor smoothing. Lower = smoother.
+      click_debounce: Number of consecutive frames required to confirm a click gesture.
+      clicked_display_frames: Number of frames to show on-screen click feedback.
   """
 
   # Start capturing video input from the camera
@@ -169,6 +174,24 @@ def run(model: str, num_hands: int,
   evnt="None"   # Holds the event generated (which menu item we selected: UP, RIGHT, DOWN, LEFT)
 
   global ACTIVE # When True, we show the menu
+  
+  # Initialize mouse controller
+  mouse = Controller()
+  # Track the last gesture seen per hand to avoid repeated clicks
+  last_gesture = {'Left': None, 'Right': None}
+  # Debounce counters for thumbs-up detection (require N consecutive frames)
+  thumbs_count = {'Left': 0, 'Right': 0}
+  # For smoothing cursor movement per hand
+  prev_pos = {'Left': None, 'Right': None}
+  # Click feedback display counters (frames)
+  clicked_display = {'Left': 0, 'Right': 0}
+  # Whether we are currently holding the left button per hand
+  holding = {'Left': False, 'Right': False}
+  # Ensure types
+  smoothing_alpha = float(smoothing_alpha)
+  click_debounce = int(click_debounce)
+  clicked_display_frames = int(clicked_display_frames)
+
 
   # Continuously capture images from the camera and run inference
   while cap.isOpened():
@@ -210,11 +233,14 @@ def run(model: str, num_hands: int,
         y_max_px = int(y_max * frame_height)
 
         # Get gesture classification results
+        category_name = None
+        score = 0.0
         if recognition_result_list[0].gestures:
           gesture = recognition_result_list[0].gestures[hand_index]
           category_name = gesture[0].category_name
           score = round(gesture[0].score, 2)
-          result_text = f'{category_name} ({score})'
+          result_text = f'{category_name} ({score})'     
+
           
           #
           # Can be used if we are interested in Left/Right hand
@@ -256,51 +282,131 @@ def run(model: str, num_hands: int,
         
         whichHand = recognition_result_list[0].handedness[hand_index][0].display_name
         
-        if(whichHand == "Left"):
-          if category_name == "Closed_Fist": 
-            image_rows, image_cols, _ = current_frame.shape
+        # Thumbs-up detection with debounce: require N consecutive frames before clicking
+        cat_name = ''
+        if category_name:
+          cat_name = category_name.lower()
+        if 'thumb' in cat_name and 'up' in cat_name and score >= 0.7:
+          thumbs_count[whichHand] = thumbs_count.get(whichHand, 0) + 1
+        else:
+          thumbs_count[whichHand] = 0
 
-            c1=hand_landmarks_proto.landmark[mp_hands.HandLandmark.WRIST]
-            c2 = mp_drawing._normalized_to_pixel_coordinates(c1.x, c1.y, image_cols, image_rows)
+        if thumbs_count[whichHand] >= click_debounce and last_gesture.get(whichHand) != 'thumbs_up':
+          # Trigger a single left-click on transition into thumbs-up
+          try:
+            mouse.click(Button.left, 1)
+          except Exception:
+            try:
+              mouse.press(Button.left)
+              mouse.release(Button.left)
+            except Exception:
+              pass
+          last_gesture[whichHand] = 'thumbs_up'
+          clicked_display[whichHand] = clicked_display_frames
 
-            d1=hand_landmarks_proto.landmark[mp_hands.HandLandmark.INDEX_FINGER_PIP]
-            d2 = mp_drawing._normalized_to_pixel_coordinates(d1.x, d1.y, image_cols, image_rows)
+        # If the gesture keeps being thumbs-up for more than the debounce window, start holding
+        if thumbs_count[whichHand] > click_debounce and last_gesture.get(whichHand) == 'thumbs_up' and not holding.get(whichHand, False):
+          try:
+            mouse.press(Button.left)
+            holding[whichHand] = True
+          except Exception:
+            holding[whichHand] = False
 
-            if c2 != None and d2 != None:
-              if( ACTIVE == False ):
-                ACTIVE = True
-                cnr = getCenter(c2,d2)
-                dist = getDistance(c2,d2)
+        # If gesture is not thumbs-up and we used to be thumbs-up, clear state and release any hold so click can re-trigger later
+        if not ('thumb' in cat_name and 'up' in cat_name):
+          if holding.get(whichHand, False):
+            try:
+              mouse.release(Button.left)
+            except Exception:
+              pass
+            holding[whichHand] = False
+          if last_gesture.get(whichHand) == 'thumbs_up':
+            last_gesture[whichHand] = None
 
-              drawUI(current_frame, c2, d2, cnr, dist, getCenter(c2,d2))
-              ACTIVEcntr=0
-              
-          elif category_name == "Open_Palm" and ACTIVE:
-            image_rows, image_cols, _ = current_frame.shape
-
-            c1=hand_landmarks_proto.landmark[mp_hands.HandLandmark.WRIST]
-            c2 = mp_drawing._normalized_to_pixel_coordinates(c1.x, c1.y, image_cols, image_rows)
-
-            d1=hand_landmarks_proto.landmark[mp_hands.HandLandmark.INDEX_FINGER_PIP]
-            d2 = mp_drawing._normalized_to_pixel_coordinates(d1.x, d1.y, image_cols, image_rows)
-
-            if c2 != None and d2 != None:
-              cnrCur = getCenter(c2,d2)
-              if getDistance(cnr,cnrCur) > dist:
-                evnt = getEvent(cnr, cnrCur)
-              ACTIVEcntr=0
-              ACTIVE = False
-
+        # Move mouse based on any hand position
+        image_rows, image_cols, _ = current_frame.shape
+        
+        # Use index finger tip for cursor position (more stable) and apply smoothing
+        index_finger_tip = hand_landmarks_proto.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+        
+        if index_finger_tip is not None:
+          # Get screen dimensions
+          try:
+            import pyautogui
+            screen_width, screen_height = pyautogui.size()
+          except:
+            screen_width, screen_height = 1920, 1080  # Default fallback
+          
+          # Map normalized coordinates to screen coordinates (invert X because camera is mirrored)
+          raw_x = (index_finger_tip.x) * screen_width
+          raw_y = index_finger_tip.y * screen_height
+          
+          # Apply exponential moving average smoothing per hand
+          prev = prev_pos.get(whichHand)
+          if prev is None:
+            smooth_x, smooth_y = int(raw_x), int(raw_y)
           else:
-            if ACTIVE:
-              ACTIVEcntr=ACTIVEcntr+1
-              if ACTIVEcntr > 15:  # to avoid flickering
-                ACTIVEcntr=0
-                ACTIVE=False        
+            smooth_x = int(smoothing_alpha * raw_x + (1.0 - smoothing_alpha) * prev[0])
+            smooth_y = int(smoothing_alpha * raw_y + (1.0 - smoothing_alpha) * prev[1])
+          prev_pos[whichHand] = (smooth_x, smooth_y)
+          
+          # Move mouse to the smoothed position
+          mouse.position = (smooth_x, smooth_y)
+
+        # Show click feedback if active (draw regardless of finger visibility)
+        if clicked_display.get(whichHand, 0) > 0:
+          display_x = text_x
+          display_y = text_y - 20
+          cv2.putText(current_frame, "Clicked", (display_x, display_y),
+                      cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,200,0), 2, cv2.LINE_AA)
+          clicked_display[whichHand] = max(0, clicked_display.get(whichHand, 0) - 1)
+
+        
+        # Show menu on Closed_Fist from any hand
+        if category_name == "Closed_Fist": 
+          image_rows, image_cols, _ = current_frame.shape
+
+          c1=hand_landmarks_proto.landmark[mp_hands.HandLandmark.WRIST]
+          c2 = mp_drawing._normalized_to_pixel_coordinates(c1.x, c1.y, image_cols, image_rows)
+
+          d1=hand_landmarks_proto.landmark[mp_hands.HandLandmark.INDEX_FINGER_PIP]
+          d2 = mp_drawing._normalized_to_pixel_coordinates(d1.x, d1.y, image_cols, image_rows)
+
+          if c2 != None and d2 != None:
+            if( ACTIVE == False ):
+              ACTIVE = True
+              cnr = getCenter(c2,d2)
+              dist = getDistance(c2,d2)
+
+            drawUI(current_frame, c2, d2, cnr, dist, getCenter(c2,d2))
+            ACTIVEcntr=0
+            
+        elif category_name == "Open_Palm" and ACTIVE:
+          image_rows, image_cols, _ = current_frame.shape
+
+          c1=hand_landmarks_proto.landmark[mp_hands.HandLandmark.WRIST]
+          c2 = mp_drawing._normalized_to_pixel_coordinates(c1.x, c1.y, image_cols, image_rows)
+
+          d1=hand_landmarks_proto.landmark[mp_hands.HandLandmark.INDEX_FINGER_PIP]
+          d2 = mp_drawing._normalized_to_pixel_coordinates(d1.x, d1.y, image_cols, image_rows)
+
+          if c2 != None and d2 != None:
+            cnrCur = getCenter(c2,d2)
+            if getDistance(cnr,cnrCur) > dist:
+              evnt = getEvent(cnr, cnrCur)
+            ACTIVEcntr=0
+            ACTIVE = False
+
+        else:
+          if ACTIVE:
+            ACTIVEcntr=ACTIVEcntr+1
+            if ACTIVEcntr > 15:  # to avoid flickering
+              ACTIVEcntr=0
+              ACTIVE=False        
 
 
         
-        cv2.putText(current_frame, f"(Left Hand) LAST EVENT: {evnt}", (22, 80),
+        cv2.putText(current_frame, f"({whichHand} Hand) LAST EVENT: {evnt}", (22, 80),
                       cv2.FONT_HERSHEY_DUPLEX, label_font_size,
                       (128,0,0), label_thickness, cv2.LINE_AA)      
 
