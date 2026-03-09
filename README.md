@@ -1,14 +1,12 @@
 Wentworth Institute of Technology
 COMP 5500 Senior Project
 
-Jack Donahue
-Giang Do
+Jack Donahue & Giang Do
 
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-----------------------------------
-Virtual Input Device
+VID (Virtual Input Device)
 
-----------------------------------
+
+Libraries
+
+Mediapipe (Camera based hand tracking)
+...
