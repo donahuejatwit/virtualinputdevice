@@ -37,7 +37,7 @@ taiko_key_states = {name: False for name in taiko_key_bindings}
 
 # Clicking Logic
 grace_period = 0.05    # small release grace to absorb single-frame detection drops
-hold_threshold = .5  # short threshold so slider/spinner hold starts quickly
+hold_threshold = 1  # start hold quickly while still allowing short tap clicks
 
 
 def reset_mouse_click_state():
@@ -177,6 +177,11 @@ def run(model,
 
     recognition_result_list = []
     prev_mouse_x, prev_mouse_y = 0, 0
+    mouse_index_down = False
+    mouse_middle_down = False
+    stable_mouse_click_detected = False
+    mouse_click_on_counter = 0
+    mouse_click_off_counter = 0
 
     def save_result(result,
                     output_image,
@@ -302,9 +307,15 @@ def run(model,
 
                 if taiko_mode:
                     reset_mouse_click_state()
+                    stable_mouse_click_detected = False
+                    mouse_click_on_counter = 0
+                    mouse_click_off_counter = 0
+                    mouse_index_down = False
+                    mouse_middle_down = False
                 else:
                     release_all_taiko_keys()
 
+            raw_mouse_click_detected = False
             if result.hand_landmarks:
 
                 h, w, _ = frame.shape
@@ -343,15 +354,18 @@ def run(model,
                             hand_landmarks,
                             tip_idx=8,
                             base_idx=5,
-                            previously_down=False
+                            previously_down=mouse_index_down
                         )
                         middle_bent = is_finger_down_by_distance(
                             hand_landmarks,
                             tip_idx=12,
                             base_idx=9,
-                            previously_down=False
+                            previously_down=mouse_middle_down
                         )
+                        mouse_index_down = index_bent
+                        mouse_middle_down = middle_bent
                         mouse_click_detected = mouse_click_detected or index_bent or middle_bent
+                        raw_mouse_click_detected = raw_mouse_click_detected or index_bent or middle_bent
                     else:
                         hand_label = get_hand_label(result, hand_index, hand_landmarks)
 
@@ -378,11 +392,29 @@ def run(model,
                     for key_name, is_down in taiko_frame_finger_state.items():
                         update_taiko_key_state(key_name, is_down)
                 else:
-                    handle_click(mouse_click_detected, current_time)
+                    if raw_mouse_click_detected:
+                        mouse_click_on_counter += 1
+                        mouse_click_off_counter = 0
+                    else:
+                        mouse_click_off_counter += 1
+                        mouse_click_on_counter = 0
+
+                    if not stable_mouse_click_detected and mouse_click_on_counter >= click_on_frames:
+                        stable_mouse_click_detected = True
+                    elif stable_mouse_click_detected and mouse_click_off_counter >= click_off_frames:
+                        stable_mouse_click_detected = False
+
+                    handle_click(stable_mouse_click_detected, current_time)
             elif taiko_mode:
                 release_all_taiko_keys()
             else:
-                handle_click(False, current_time)
+                mouse_click_off_counter += 1
+                mouse_click_on_counter = 0
+                if stable_mouse_click_detected and mouse_click_off_counter >= click_off_frames:
+                    stable_mouse_click_detected = False
+                mouse_index_down = False
+                mouse_middle_down = False
+                handle_click(stable_mouse_click_detected, current_time)
 
             if taiko_mode:
                 reset_mouse_click_state()
