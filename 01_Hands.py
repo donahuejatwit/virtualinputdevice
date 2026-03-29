@@ -1,3 +1,4 @@
+
 import time
 import cv2
 import mediapipe as mp
@@ -37,7 +38,7 @@ taiko_key_states = {name: False for name in taiko_key_bindings}
 
 # Clicking Logic
 grace_period = 0.05    # small release grace to absorb single-frame detection drops
-hold_threshold = 1  # start hold quickly while still allowing short tap clicks
+hold_threshold = .15 # start hold quickly while still allowing short tap clicks
 
 
 def reset_mouse_click_state():
@@ -126,9 +127,9 @@ def handle_click(gesture_detected, current_time):
 
         if gesture_start_time is None:
             gesture_start_time = current_time
-            return
 
-        if not is_mouse_pressed and current_time - gesture_start_time >= hold_threshold:
+        # Press immediately when bend is detected so click starts without hold delay.
+        if not is_mouse_pressed:
             mouse_controller.press(Button.left)
             is_mouse_pressed = True
 
@@ -140,14 +141,9 @@ def handle_click(gesture_detected, current_time):
         if current_time - last_seen_time < grace_period:
             return
 
-        duration = last_seen_time - gesture_start_time
-
         if is_mouse_pressed:
             mouse_controller.release(Button.left)
             is_mouse_pressed = False
-
-        elif duration < hold_threshold:
-            mouse_controller.click(Button.left)
 
         gesture_start_time = None
 
@@ -361,15 +357,14 @@ def run(model,
                         update_taiko_key_state(key_name, is_down)
                 else:
                     if raw_mouse_click_detected:
-                        mouse_click_on_counter += 1
+                        stable_mouse_click_detected = True
+                        mouse_click_on_counter = click_on_frames
                         mouse_click_off_counter = 0
                     else:
                         mouse_click_off_counter += 1
                         mouse_click_on_counter = 0
 
-                    if not stable_mouse_click_detected and mouse_click_on_counter >= click_on_frames:
-                        stable_mouse_click_detected = True
-                    elif stable_mouse_click_detected and mouse_click_off_counter >= click_off_frames:
+                    if stable_mouse_click_detected and mouse_click_off_counter >= click_off_frames:
                         stable_mouse_click_detected = False
 
                     handle_click(stable_mouse_click_detected, current_time)
