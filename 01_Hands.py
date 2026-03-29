@@ -263,39 +263,7 @@ def run(model,
                 taiko_detect_counter += 1
             else:
                 taiko_detect_counter = 0
-            # gesture based 
-            # Legacy mouse-click logic (disabled): gesture-confidence pipeline.
-            # Keep this here as a quick rollback reference.
-            #
-            # current_gesture_match = False
-            # current_gesture_score = 0.0
-            #
-            # if result.gestures and not taiko_mode:
-            #     for gesture_list in result.gestures:
-            #         gesture = gesture_list[0]
-            #         gesture_name = gesture.category_name
-            #         score = gesture.score
-            #
-            #         if gesture_name == click_gesture_name:
-            #             current_gesture_match = True
-            #             current_gesture_score = max(current_gesture_score, score)
-            #
-            # if current_gesture_score >= click_on_score_threshold:
-            #     gesture_on_counter += 1
-            #     gesture_off_counter = 0
-            # elif current_gesture_score <= click_off_score_threshold:
-            #     gesture_off_counter += 1
-            #     gesture_on_counter = 0
-            #
-            # if not stable_gesture_detected and gesture_on_counter >= click_on_frames:
-            #     stable_gesture_detected = True
-            # elif stable_gesture_detected and gesture_off_counter >= click_off_frames:
-            #     stable_gesture_detected = False
-            #
-            # if taiko_mode:
-            #     reset_mouse_click_state()
-            # else:
-            #     handle_click(stable_gesture_detected, current_time)
+
 
             if (
                 taiko_detect_counter >= taiko_toggle_frames
