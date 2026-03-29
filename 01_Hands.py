@@ -312,23 +312,18 @@ def run(model,
                         mouse_controller.position = (new_x, new_y)
                         prev_mouse_x, prev_mouse_y = new_x, new_y
 
-                        # Mouse mode click now shares taiko bend logic (index or middle curl).
+                        # Mouse mode click uses index finger curl.
                         index_bent = is_finger_down_by_distance(
                             hand_landmarks,
                             tip_idx=8,
                             base_idx=5,
                             previously_down=mouse_index_down
                         )
-                        middle_bent = is_finger_down_by_distance(
-                            hand_landmarks,
-                            tip_idx=12,
-                            base_idx=9,
-                            previously_down=mouse_middle_down
-                        )
+                
                         mouse_index_down = index_bent
-                        mouse_middle_down = middle_bent
-                        mouse_click_detected = mouse_click_detected or index_bent or middle_bent
-                        raw_mouse_click_detected = raw_mouse_click_detected or index_bent or middle_bent
+                        mouse_middle_down = False
+                        mouse_click_detected = mouse_click_detected or index_bent
+                        raw_mouse_click_detected = raw_mouse_click_detected or index_bent
                     else:
                         hand_label = get_hand_label(result, hand_index, hand_landmarks)
 

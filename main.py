@@ -23,8 +23,8 @@ hands_module.run(
     height_buffer=int(cam_height * 0.1),
     click_gesture_name = 'Open_Palm',
     smoothing_factor=0.8,
-    click_on_score_threshold=0.4,
+    click_on_score_threshold=0.38,
     click_off_score_threshold=0.38,
     click_on_frames=2,
-    click_off_frames=2
+    click_off_frames=1
     )
